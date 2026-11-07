@@ -1,7 +1,7 @@
 import os
 
 from flask import Blueprint, jsonify, request, session, render_template, send_file
-from controllers.document_controller import upload_document
+from controllers.document_controller import delete_document, upload_document
 from models.document_model import get_accessible_documents
 from services.authorization_service import (
     AuthorizationError,
@@ -11,6 +11,20 @@ from services.authorization_service import (
 )
 
 document_bp = Blueprint("documents", __name__)
+
+
+@document_bp.route("/<int:document_id>", methods=["DELETE"])
+def delete_document_route(document_id):
+    if "user_id" not in session:
+        return jsonify({"message": "Authentication is required."}), 401
+
+    try:
+        delete_document(session["user_id"], document_id)
+        return jsonify({"message": "Document deleted successfully."}), 200
+    except (AuthorizationError, FileNotFoundError):
+        return jsonify({"message": "Document not found."}), 404
+    except Exception:
+        return jsonify({"message": "Document deletion failed."}), 500
 
 
 @document_bp.route("/", methods=["GET"])

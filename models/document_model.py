@@ -1,3 +1,5 @@
+import json
+
 from config.db import get_db_connection
 
 
@@ -109,5 +111,49 @@ def get_accessible_documents(user_id):
             )
             return cursor.fetchall()
 
+    finally:
+        connection.close()
+
+
+def delete_document_record(document_id, actor_user_id):
+    """Delete one document row and record the deletion in the same transaction."""
+    connection = get_db_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM document_permissions WHERE document_id = %s",
+                (document_id,),
+            )
+
+            cursor.execute(
+                "DELETE FROM documents WHERE id = %s",
+                (document_id,),
+            )
+
+            if cursor.rowcount != 1:
+                raise RuntimeError("Expected exactly one document row to be deleted.")
+
+            cursor.execute(
+                """
+                INSERT INTO audit_events (
+                    actor_user_id, document_id, target_user_id,
+                    event_type, action, result, details
+                )
+                VALUES (%s, NULL, NULL, %s, %s, %s, %s)
+                """,
+                (
+                    actor_user_id,
+                    "DOCUMENT_DELETED",
+                    "DELETE",
+                    "SUCCESS",
+                    json.dumps({"document_id": document_id}, separators=(",", ":")),
+                ),
+            )
+
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()

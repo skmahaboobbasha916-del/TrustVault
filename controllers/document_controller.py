@@ -5,7 +5,8 @@ import hashlib
 from flask import current_app
 from werkzeug.utils import secure_filename
 
-from models.document_model import create_document
+from models.document_model import create_document, delete_document_record
+from services.authorization_service import authorize_document
 
 
 ALLOWED_EXTENSIONS = {
@@ -68,3 +69,33 @@ def upload_document(file, owner_id, category=None):
         if os.path.exists(file_path):
             os.remove(file_path)
         raise
+
+
+def delete_document(session_user_id, document_id):
+    """Authorize and delete a document's file, then its database record."""
+    document = authorize_document(session_user_id, document_id, "delete")
+
+    stored_path = document.get("file_path")
+    if not isinstance(stored_path, str) or not stored_path:
+        raise ValueError("Document file path is invalid.")
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    resolved_upload_folder = os.path.realpath(upload_folder)
+    resolved_file_path = os.path.realpath(stored_path)
+
+    try:
+        common_path = os.path.commonpath(
+            [resolved_upload_folder, resolved_file_path]
+        )
+    except ValueError as error:
+        raise ValueError("Document file path is outside the upload directory.") from error
+
+    if (common_path != resolved_upload_folder
+            or resolved_file_path == resolved_upload_folder):
+        raise ValueError("Document file path is outside the upload directory.")
+
+    if not os.path.isfile(resolved_file_path):
+        raise FileNotFoundError("Document file not found.")
+
+    os.remove(resolved_file_path)
+    delete_document_record(document_id, session_user_id)
