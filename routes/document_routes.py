@@ -1,10 +1,28 @@
 import os
 
-from flask import Blueprint, request, session, render_template, send_file
+from flask import Blueprint, jsonify, request, session, render_template, send_file
 from controllers.document_controller import upload_document
-from services.authorization_service import AuthorizationError, authorize_document
+from models.document_model import get_accessible_documents
+from services.authorization_service import (
+    AuthorizationError,
+    authorize_document,
+    grant_document_permission,
+    revoke_document_permission,
+)
 
 document_bp = Blueprint("documents", __name__)
+
+
+@document_bp.route("/", methods=["GET"])
+def list_documents():
+    if "user_id" not in session:
+        return "Authentication is required.", 401
+
+    try:
+        documents = get_accessible_documents(session["user_id"])
+        return jsonify(documents), 200
+    except Exception:
+        return "Document listing failed.", 500
 
 
 @document_bp.route("/<int:document_id>/download", methods=["GET"])
@@ -33,6 +51,53 @@ def download_document(document_id):
         return "Document file not found.", 404
     except Exception:
         return "Document download failed.", 500
+
+
+@document_bp.route("/<int:document_id>/permissions", methods=["POST"])
+def grant_permission(document_id):
+    if "user_id" not in session:
+        return "Authentication is required.", 401
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return "A JSON request body is required.", 400
+
+    target_user_id = payload.get("target_user_id")
+    permission = payload.get("permission")
+    if type(target_user_id) is not int or target_user_id <= 0:
+        return "A valid target_user_id is required.", 400
+    if not isinstance(permission, str):
+        return "Invalid permission.", 400
+    permission = permission.strip().upper()
+    if permission not in {"READ", "EDIT"}:
+        return "Invalid permission.", 400
+
+    try:
+        permission_id = grant_document_permission(
+            session["user_id"], document_id, target_user_id, permission
+        )
+        return {"permission_id": permission_id}, 201
+    except ValueError:
+        return "Invalid permission.", 400
+    except AuthorizationError:
+        return "Document not found.", 404
+    except Exception:
+        return "Permission grant failed.", 500
+
+
+@document_bp.route("/<int:document_id>/permissions/<int:target_user_id>", methods=["DELETE"])
+def revoke_permission(document_id, target_user_id):
+    if "user_id" not in session:
+        return "Authentication is required.", 401
+
+    try:
+        revoke_document_permission(session["user_id"], document_id, target_user_id)
+        return {"message": "Permission revoked."}, 200
+    except AuthorizationError:
+        return "Document not found.", 404
+    except Exception:
+        return "Permission revocation failed.", 500
+
 
 @document_bp.route("/upload-page", methods=["GET"])
 def upload_page():
