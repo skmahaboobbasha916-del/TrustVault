@@ -1,7 +1,38 @@
-from flask import Blueprint, request, session, render_template
+import os
+
+from flask import Blueprint, request, session, render_template, send_file
 from controllers.document_controller import upload_document
+from services.authorization_service import AuthorizationError, authorize_document
 
 document_bp = Blueprint("documents", __name__)
+
+
+@document_bp.route("/<int:document_id>/download", methods=["GET"])
+def download_document(document_id):
+    if "user_id" not in session:
+        return "Authentication is required.", 401
+
+    try:
+        document = authorize_document(session["user_id"], document_id, "download")
+    except AuthorizationError:
+        return "Document not found.", 404
+    except Exception:
+        return "Document download failed.", 500
+
+    file_path = document.get("file_path")
+    if not file_path or not os.path.isfile(file_path):
+        return "Document file not found.", 404
+
+    try:
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=document.get("original_filename"),
+        )
+    except OSError:
+        return "Document file not found.", 404
+    except Exception:
+        return "Document download failed.", 500
 
 @document_bp.route("/upload-page", methods=["GET"])
 def upload_page():
