@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TrustVault - Upload Document</title>
+</head>
+<body>
+    <div class="container">
+        <h2>Upload Document</h2>
+
+        <form method="POST"
+              action="/api/documents/upload"
+              enctype="multipart/form-data">
+
+            <label>Select Document:</label>
+            <input type="file" name="document" required>
+
+            <label>Category:</label>
+            <input type="text" name="category"
+                   placeholder="Example: Personal">
+
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+</body>
+</html>
