@@ -180,3 +180,72 @@ def test_document_list_excludes_internal_storage_fields(client, monkeypatch):
     body = response.get_data(as_text=True)
     assert "file_path" not in body
     assert "stored_filename" not in body
+
+
+def test_document_delete_requires_authentication(client, monkeypatch):
+    delete = MagicMock()
+    monkeypatch.setattr(document_routes, "delete_document", delete)
+
+    response = client.delete("/api/documents/10")
+
+    assert response.status_code == 401
+    delete.assert_not_called()
+
+
+def test_document_delete_returns_success_and_passes_session_user_id(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+    delete = MagicMock()
+    monkeypatch.setattr(document_routes, "delete_document", delete)
+
+    response = client.delete("/api/documents/10?user_id=999")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"message": "Document deleted successfully."}
+    delete.assert_called_once_with(42, 10)
+
+
+def test_document_delete_maps_authorization_error_to_404(client, monkeypatch):
+    authenticate(client, user_id=42)
+    delete = MagicMock(side_effect=AuthorizationError("private authorization detail"))
+    monkeypatch.setattr(document_routes, "delete_document", delete)
+
+    response = client.delete("/api/documents/10")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"message": "Document not found."}
+    assert "private authorization detail" not in response.get_data(as_text=True)
+    delete.assert_called_once_with(42, 10)
+
+
+def test_document_delete_maps_missing_file_to_404(client, monkeypatch):
+    authenticate(client, user_id=42)
+    delete = MagicMock(side_effect=FileNotFoundError("C:/private/uploads/secret.txt"))
+    monkeypatch.setattr(document_routes, "delete_document", delete)
+
+    response = client.delete("/api/documents/10")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"message": "Document not found."}
+    assert "C:/private/uploads/secret.txt" not in response.get_data(as_text=True)
+    delete.assert_called_once_with(42, 10)
+
+
+def test_document_delete_returns_generic_500_without_internal_details(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+    delete = MagicMock(
+        side_effect=RuntimeError("failure at C:/private/uploads/secret.txt")
+    )
+    monkeypatch.setattr(document_routes, "delete_document", delete)
+
+    response = client.delete("/api/documents/10")
+
+    assert response.status_code == 500
+    assert response.get_json() == {"message": "Document deletion failed."}
+    body = response.get_data(as_text=True)
+    assert "C:/private/uploads/secret.txt" not in body
+    assert "failure at" not in body
+    delete.assert_called_once_with(42, 10)
