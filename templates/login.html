@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TrustVault - Login</title>
+</head>
+<body>
+    <div class="container">
+        <h2>Login to TrustVault</h2>
+
+        <form method="POST" action="/api/auth/login">
+            <input type="email" name="email"
+                   placeholder="Email Address" required>
+
+            <input type="password" name="password"
+                   placeholder="Password" required>
+
+            <button type="submit">Login</button>
+        </form>
+
+        <p>Don't have an account?
+            <a href="/api/auth/register">Register</a>
+        </p>
+    </div>
+</body>
+</html>
