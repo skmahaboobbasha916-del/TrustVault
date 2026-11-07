@@ -23,6 +23,23 @@ def create_document(owner_id, original_filename, stored_filename,
 
             document_id = cursor.lastrowid
 
+            cursor.execute(
+                """
+                INSERT INTO audit_events (
+                    actor_user_id, document_id, target_user_id,
+                    event_type, action, result, details
+                )
+                VALUES (%s, %s, NULL, %s, %s, %s, NULL)
+                """,
+                (
+                    owner_id,
+                    document_id,
+                    "DOCUMENT_UPLOADED",
+                    "UPLOAD",
+                    "SUCCESS",
+                ),
+            )
+
         connection.commit()
         return document_id
 
