@@ -181,3 +181,144 @@ def test_owner_cannot_grant_permission_to_self(database):
     assert result == "DENIED"
     assert json.loads(details) == {"reason": "owner_cannot_grant_permission_to_self"}
     connection.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("actor_type", ["owner", "EDIT"])
+def test_metadata_modification_is_atomic_for_owner_and_edit_user(
+    database, monkeypatch, actor_type
+):
+    connection, cursor = database
+    actor = user(2)
+    owned_document = document(owner_id=2 if actor_type == "owner" else 1)
+    cursor.fetchone.side_effect = [actor, owned_document]
+    cursor.fetchall.return_value = (
+        [] if actor_type == "owner" else [{"id": 9, "permission": "EDIT"}]
+    )
+    update = MagicMock(return_value=1)
+    monkeypatch.setattr(authorization, "update_document_metadata", update)
+
+    result = authorization.modify_document_metadata(
+        2, 10, {"category": " reports ", "original_filename": "report one.txt"}
+    )
+
+    assert result == 10
+    assert update.call_args.args[0] is cursor
+    assert update.call_args.args[1:] == (
+        10,
+        {"category": "reports", "original_filename": "report_one.txt"},
+    )
+    statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert "FROM users WHERE id = %s" in statements[0]
+    assert "FOR UPDATE" not in statements[0]
+    permission_statement = next(
+        statement for statement in statements if "FROM document_permissions" in statement
+    )
+    document_statement = next(
+        statement for statement in statements if "FROM documents WHERE id = %s" in statement
+    )
+    assert "revoked_at IS NULL" in permission_statement
+    assert "FOR UPDATE" in permission_statement
+    assert "FOR UPDATE" in document_statement
+    assert statements.index(permission_statement) < statements.index(document_statement)
+    assert_access_audit(cursor, "modify", "SUCCESS")
+    connection.commit.assert_called_once()
+    connection.rollback.assert_not_called()
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("role", "owner_id", "permission_rows"),
+    [
+        ("user", 1, [{"id": 9, "permission": "READ"}]),
+        ("user", 1, []),  # Includes revoked-only grants: query returns no active rows.
+        ("admin", 1, []),
+        ("admin", 2, []),
+    ],
+)
+def test_metadata_modification_denies_read_unauthorized_and_admin(
+    database, monkeypatch, role, owner_id, permission_rows
+):
+    connection, cursor = database
+    actor = user(2, role=role)
+    cursor.fetchone.side_effect = [actor, document(owner_id=owner_id)]
+    cursor.fetchall.return_value = permission_rows
+    update = MagicMock()
+    monkeypatch.setattr(authorization, "update_document_metadata", update)
+
+    with pytest.raises(authorization.AuthorizationError):
+        authorization.modify_document_metadata(2, 10, {"category": "reports"})
+
+    assert_access_audit(cursor, "modify", "DENIED", "insufficient_permission")
+    update.assert_not_called()
+    connection.commit.assert_called_once()
+    connection.rollback.assert_not_called()
+    connection.close.assert_called_once()
+    statements = [call.args[0] for call in cursor.execute.call_args_list]
+    permission_statement = next(
+        statement for statement in statements if "FROM document_permissions" in statement
+    )
+    document_statement = next(
+        statement for statement in statements if "FROM documents WHERE id = %s" in statement
+    )
+    assert statements.index(permission_statement) < statements.index(document_statement)
+
+
+def test_metadata_modification_rolls_back_when_update_fails(database, monkeypatch):
+    connection, cursor = database
+    cursor.fetchone.side_effect = [user(2), document(owner_id=2)]
+    update_error = RuntimeError("metadata update failed")
+    update = MagicMock(side_effect=update_error)
+    monkeypatch.setattr(authorization, "update_document_metadata", update)
+
+    with pytest.raises(RuntimeError, match="metadata update failed"):
+        authorization.modify_document_metadata(2, 10, {"category": "reports"})
+
+    assert audit_records(cursor) == []
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()
+    connection.close.assert_called_once()
+
+
+def test_metadata_modification_rolls_back_update_when_audit_insert_fails(
+    database, monkeypatch
+):
+    connection, cursor = database
+    cursor.fetchone.side_effect = [user(2), document(owner_id=2)]
+    update = MagicMock(return_value=1)
+    monkeypatch.setattr(authorization, "update_document_metadata", update)
+
+    def fail_audit(statement, *args):
+        if "INSERT INTO audit_events" in statement:
+            raise RuntimeError("audit insert failed")
+
+    cursor.execute.side_effect = fail_audit
+
+    with pytest.raises(RuntimeError, match="audit insert failed"):
+        authorization.modify_document_metadata(2, 10, {"category": "reports"})
+
+    update.assert_called_once()
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"file_path": "C:/private/file"},
+        {"owner_id": 99},
+        {"original_filename": "../"},
+        {"category": 99},
+    ],
+)
+def test_metadata_modification_rejects_invalid_fields_before_opening_connection(
+    database, fields
+):
+    connection, _ = database
+
+    with pytest.raises(ValueError):
+        authorization.modify_document_metadata(2, 10, fields)
+
+    connection.cursor.assert_not_called()
+    connection.close.assert_not_called()

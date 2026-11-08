@@ -168,3 +168,37 @@ def test_accessible_document_search_has_no_permission_join_duplicates(db_mocks):
     assert "EXISTS (" in sql
     assert "INNER JOIN document_permissions" not in sql
     assert "SELECT p.permission" in sql
+
+
+def test_update_document_metadata_uses_fixed_columns_and_bound_values(db_mocks):
+    _, cursor = db_mocks
+    cursor.rowcount = 1
+
+    updated = document_model.update_document_metadata(
+        cursor,
+        10,
+        {"original_filename": "new-name.txt", "category": "reports"},
+    )
+
+    sql, params = cursor.execute.call_args.args
+    assert sql == "UPDATE documents SET category = %s, original_filename = %s WHERE id = %s"
+    assert params == ("reports", "new-name.txt", 10)
+    assert updated == 1
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"owner_id": 42},
+        {"file_path": "C:/private/file"},
+        {"category": "reports", "checksum": "forged"},
+    ],
+)
+def test_update_document_metadata_rejects_empty_or_immutable_fields(db_mocks, fields):
+    _, cursor = db_mocks
+
+    with pytest.raises(ValueError):
+        document_model.update_document_metadata(cursor, 10, fields)
+
+    cursor.execute.assert_not_called()

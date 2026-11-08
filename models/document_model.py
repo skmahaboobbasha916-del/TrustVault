@@ -3,6 +3,30 @@ import json
 from config.db import get_db_connection
 
 
+DOCUMENT_METADATA_FIELDS = frozenset({"category", "original_filename"})
+
+
+def update_document_metadata(cursor, document_id, fields):
+    """Update only allowlisted metadata on the caller's transaction cursor."""
+    if not isinstance(fields, dict) or not fields:
+        raise ValueError("At least one document metadata field is required.")
+    if not set(fields).issubset(DOCUMENT_METADATA_FIELDS):
+        raise ValueError("Unsupported document metadata field.")
+
+    # Identifiers come exclusively from this fixed allowlist. Field values and
+    # the document ID remain bound parameters.
+    ordered_fields = [
+        field for field in ("category", "original_filename") if field in fields
+    ]
+    assignments = ", ".join(f"{field} = %s" for field in ordered_fields)
+    values = tuple(fields[field] for field in ordered_fields) + (document_id,)
+    cursor.execute(
+        f"UPDATE documents SET {assignments} WHERE id = %s",
+        values,
+    )
+    return cursor.rowcount
+
+
 def create_document(owner_id, original_filename, stored_filename,
                     file_path, category, mime_type, file_size, checksum):
 
