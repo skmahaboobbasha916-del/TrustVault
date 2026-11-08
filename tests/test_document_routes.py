@@ -328,3 +328,118 @@ def test_document_delete_returns_generic_500_without_internal_details(
     assert "C:/private/uploads/secret.txt" not in body
     assert "failure at" not in body
     delete.assert_called_once_with(42, 10)
+
+
+@pytest.mark.parametrize("access_type", ["owner", "EDIT"])
+def test_document_metadata_patch_allows_owner_and_edit_user(
+    client, monkeypatch, access_type
+):
+    authenticate(client, user_id=42)
+    modify = MagicMock(return_value=10)
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    response = client.patch(
+        "/api/documents/10",
+        json={"category": "reports", "original_filename": "report.txt"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "message": "Document metadata updated successfully.",
+        "document_id": 10,
+    }
+    modify.assert_called_once_with(
+        42, 10, {"category": "reports", "original_filename": "report.txt"}
+    )
+
+
+@pytest.mark.parametrize("access_type", ["READ", "admin"])
+def test_document_metadata_patch_denies_read_and_admin_users(
+    client, monkeypatch, access_type
+):
+    authenticate(client, user_id=42)
+    modify = MagicMock(side_effect=AuthorizationError("private access details"))
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    response = client.patch("/api/documents/10", json={"category": "reports"})
+
+    assert response.status_code == 404
+    assert response.get_json() == {"message": "Document not found."}
+    assert "private access details" not in response.get_data(as_text=True)
+    modify.assert_called_once_with(42, 10, {"category": "reports"})
+
+
+def test_document_metadata_patch_requires_authentication(client, monkeypatch):
+    modify = MagicMock()
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    response = client.patch("/api/documents/10", json={"category": "reports"})
+
+    assert response.status_code == 401
+    assert response.get_json() == {"message": "Authentication is required."}
+    modify.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [None, {}, [], "invalid"])
+def test_document_metadata_patch_rejects_empty_or_non_object_json(
+    client, monkeypatch, body
+):
+    authenticate(client)
+    modify = MagicMock()
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    if body == "invalid":
+        response = client.patch(
+            "/api/documents/10", data="not-json", content_type="application/json"
+        )
+    elif body is None:
+        response = client.patch("/api/documents/10")
+    else:
+        response = client.patch("/api/documents/10", json=body)
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "message": "A non-empty JSON object is required."
+    }
+    modify.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"user_id": 999, "category": "reports"},
+        {"role": "admin", "category": "reports"},
+        {"file_path": "C:/private/file"},
+        {"checksum": "forged"},
+    ],
+)
+def test_document_metadata_patch_rejects_unexpected_fields(
+    client, monkeypatch, body
+):
+    authenticate(client, user_id=42)
+    modify = MagicMock()
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    response = client.patch("/api/documents/10", json=body)
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "message": "Unsupported document metadata field."
+    }
+    modify.assert_not_called()
+
+
+def test_document_metadata_patch_returns_generic_error_without_internal_details(
+    client, monkeypatch
+):
+    authenticate(client)
+    modify = MagicMock(side_effect=RuntimeError("failure at C:/private/file"))
+    monkeypatch.setattr(document_routes, "modify_document_metadata", modify)
+
+    response = client.patch("/api/documents/10", json={"category": "reports"})
+
+    assert response.status_code == 500
+    assert response.get_json() == {
+        "message": "Document metadata update failed."
+    }
+    assert "C:/private/file" not in response.get_data(as_text=True)

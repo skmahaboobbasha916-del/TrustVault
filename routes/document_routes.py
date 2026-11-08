@@ -11,6 +11,7 @@ from services.authorization_service import (
     AuthorizationError,
     authorize_document,
     grant_document_permission,
+    modify_document_metadata,
     revoke_document_permission,
 )
 
@@ -29,6 +30,31 @@ def delete_document_route(document_id):
         return jsonify({"message": "Document not found."}), 404
     except Exception:
         return jsonify({"message": "Document deletion failed."}), 500
+
+
+@document_bp.route("/<int:document_id>", methods=["PATCH"])
+def modify_document_metadata_route(document_id):
+    if "user_id" not in session:
+        return jsonify({"message": "Authentication is required."}), 401
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload:
+        return jsonify({"message": "A non-empty JSON object is required."}), 400
+    if not set(payload).issubset({"category", "original_filename"}):
+        return jsonify({"message": "Unsupported document metadata field."}), 400
+
+    try:
+        modify_document_metadata(session["user_id"], document_id, payload)
+        return jsonify({
+            "message": "Document metadata updated successfully.",
+            "document_id": document_id,
+        }), 200
+    except ValueError:
+        return jsonify({"message": "Invalid document metadata."}), 400
+    except AuthorizationError:
+        return jsonify({"message": "Document not found."}), 404
+    except Exception:
+        return jsonify({"message": "Document metadata update failed."}), 500
 
 
 @document_bp.route("/", methods=["GET"])
