@@ -443,3 +443,137 @@ def test_document_metadata_patch_returns_generic_error_without_internal_details(
         "message": "Document metadata update failed."
     }
     assert "C:/private/file" not in response.get_data(as_text=True)
+
+def test_paginated_document_list_returns_next_cursor(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+
+    documents = [
+        accessible_document(12, "OWNER", owner_id=42),
+        accessible_document(11, "READ"),
+        accessible_document(10, "EDIT"),
+    ]
+
+    get_documents = MagicMock(return_value=documents)
+    monkeypatch.setattr(
+        document_routes, "get_accessible_documents", get_documents
+    )
+
+    response = client.get("/api/documents/paginated?limit=2")
+
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert [item["document_id"] for item in body["documents"]] == [12, 11]
+    assert body["has_more"] is True
+    assert body["limit"] == 2
+    assert body["next_cursor"] is not None
+
+    with client.application.app_context():
+        cursor_date, cursor_id = document_routes._decode_document_cursor(
+        body["next_cursor"]
+    )
+    assert cursor_date == documents[1]["created_at"]
+    assert cursor_id == 11
+
+    get_documents.assert_called_once_with(
+        42,
+        filename=None,
+        owner_name=None,
+        category=None,
+        start_date=None,
+        end_date=None,
+        limit=2,
+        cursor_created_at=None,
+        cursor_document_id=None,
+    )
+
+
+def test_paginated_document_list_passes_decoded_cursor(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+
+    cursor_date = datetime(2025, 1, 5)
+    with client.application.app_context():
+        cursor = document_routes._get_document_cursor_serializer().dumps({
+            "created_at": cursor_date.isoformat(),
+            "document_id": 5,
+    })
+    get_documents = MagicMock(return_value=[])
+    monkeypatch.setattr(
+        document_routes, "get_accessible_documents", get_documents
+    )
+
+    response = client.get(
+        f"/api/documents/paginated?cursor={cursor}"
+    )
+
+    assert response.status_code == 200
+    get_documents.assert_called_once_with(
+        42,
+        filename=None,
+        owner_name=None,
+        category=None,
+        start_date=None,
+        end_date=None,
+        limit=20,
+        cursor_created_at=cursor_date,
+        cursor_document_id=5,
+    )
+
+
+def test_paginated_document_list_rejects_tampered_cursor(
+    client, monkeypatch
+):
+    authenticate(client)
+
+    get_documents = MagicMock()
+    monkeypatch.setattr(
+        document_routes, "get_accessible_documents", get_documents
+    )
+
+    response = client.get(
+        "/api/documents/paginated?cursor=invalid-tampered-token"
+    )
+
+    assert response.status_code == 400
+    get_documents.assert_not_called()
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "abc"])
+def test_paginated_document_list_rejects_invalid_limit(
+    client, monkeypatch, limit
+):
+    authenticate(client)
+
+    get_documents = MagicMock()
+    monkeypatch.setattr(
+        document_routes, "get_accessible_documents", get_documents
+    )
+
+    response = client.get(
+        f"/api/documents/paginated?limit={limit}"
+    )
+
+    assert response.status_code == 400
+    get_documents.assert_not_called()
+
+
+def test_paginated_document_list_caps_limit_at_50(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+
+    get_documents = MagicMock(return_value=[])
+    monkeypatch.setattr(
+        document_routes, "get_accessible_documents", get_documents
+    )
+
+    response = client.get("/api/documents/paginated?limit=100")
+
+    assert response.status_code == 200
+    assert response.get_json()["limit"] == 50
+
+    assert get_documents.call_args.kwargs["limit"] == 50

@@ -1,4 +1,7 @@
 import os
+from datetime import datetime
+from itsdangerous import URLSafeSerializer, BadSignature
+from flask import current_app
 
 from flask import Blueprint, jsonify, request, session, render_template, send_file
 from controllers.document_controller import (
@@ -16,6 +19,56 @@ from services.authorization_service import (
 )
 
 document_bp = Blueprint("documents", __name__)
+
+def _get_document_cursor_serializer():
+    return URLSafeSerializer(
+        current_app.config["SECRET_KEY"],
+        salt="trustvault-document-pagination-v1",
+    )
+
+
+def _encode_document_cursor(document):
+    created_at = document["created_at"]
+    document_id = document["document_id"]
+
+    if not isinstance(created_at, datetime):
+        raise ValueError("Invalid document timestamp.")
+
+    if created_at.tzinfo is not None:
+        raise ValueError("Document timestamp must be timezone-naive.")
+
+    if type(document_id) is not int or document_id < 1:
+        raise ValueError("Invalid document ID.")
+
+    return _get_document_cursor_serializer().dumps({
+        "created_at": created_at.isoformat(),
+        "document_id": document_id,
+    })
+
+
+def _decode_document_cursor(token):
+    try:
+        payload = _get_document_cursor_serializer().loads(token)
+
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid cursor.")
+
+        if set(payload) != {"created_at", "document_id"}:
+            raise ValueError("Invalid cursor.")
+
+        created_at = datetime.fromisoformat(payload["created_at"])
+        document_id = payload["document_id"]
+
+        if created_at.tzinfo is not None:
+            raise ValueError("Invalid cursor timestamp.")
+
+        if type(document_id) is not int or document_id < 1:
+            raise ValueError("Invalid cursor document ID.")
+
+        return created_at, document_id
+
+    except (BadSignature, TypeError, KeyError, ValueError):
+        raise ValueError("Invalid or tampered pagination cursor.")
 
 
 @document_bp.route("/<int:document_id>", methods=["DELETE"])
@@ -57,6 +110,8 @@ def modify_document_metadata_route(document_id):
         return jsonify({"message": "Document metadata update failed."}), 500
 
 
+
+
 @document_bp.route("/", methods=["GET"])
 def list_documents():
     if "user_id" not in session:
@@ -68,6 +123,7 @@ def list_documents():
         category = request.args.get("category", "").strip() or None
         start_value = request.args.get("start_date", "").strip() or None
         end_value = request.args.get("end_date", "").strip() or None
+
         start_date, end_date = normalize_document_search_dates(
             start_value, end_value
         )
@@ -82,15 +138,82 @@ def list_documents():
                 end_date=end_date,
             )
         else:
-            # Preserve compatibility with the existing no-filter model call.
             documents = get_accessible_documents(session["user_id"])
+
         return jsonify(documents), 200
+
     except ValueError:
         return "Invalid document search filters.", 400
+
     except Exception:
         return "Document listing failed.", 500
+@document_bp.route("/paginated", methods=["GET"])
+def list_documents_paginated():
+    if "user_id" not in session:
+        return "Authentication is required.", 401
 
+    try:
+        filename = request.args.get("filename", "").strip() or None
+        owner_name = request.args.get("owner_name", "").strip() or None
+        category = request.args.get("category", "").strip() or None
 
+        start_value = request.args.get("start_date", "").strip() or None
+        end_value = request.args.get("end_date", "").strip() or None
+
+        start_date, end_date = normalize_document_search_dates(
+            start_value, end_value
+        )
+
+        limit_value = request.args.get("limit", "20")
+        limit = int(limit_value)
+
+        if limit < 1:
+            raise ValueError("Invalid limit.")
+
+        limit = min(limit, 50)
+
+        cursor_token = request.args.get("cursor", "").strip() or None
+
+        cursor_created_at = None
+        cursor_document_id = None
+
+        if cursor_token:
+            cursor_created_at, cursor_document_id = (
+                _decode_document_cursor(cursor_token)
+            )
+
+        documents = get_accessible_documents(
+            session["user_id"],
+            filename=filename,
+            owner_name=owner_name,
+            category=category,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            cursor_created_at=cursor_created_at,
+            cursor_document_id=cursor_document_id,
+        )
+
+        has_more = len(documents) > limit
+        documents = documents[:limit]
+
+        next_cursor = None
+
+        if has_more and documents:
+            next_cursor = _encode_document_cursor(documents[-1])
+
+        return jsonify({
+            "documents": documents,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "limit": limit,
+        }), 200
+
+    except (ValueError, TypeError):
+        return "Invalid document search or pagination parameters.", 400
+
+    except Exception:
+        return "Document listing failed.", 500
 @document_bp.route("/<int:document_id>/download", methods=["GET"])
 def download_document(document_id):
     if "user_id" not in session:
