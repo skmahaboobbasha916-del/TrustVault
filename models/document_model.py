@@ -1,7 +1,7 @@
 import json
+from datetime import datetime
 
 from config.db import get_db_connection
-
 
 DOCUMENT_METADATA_FIELDS = frozenset({"category", "original_filename"})
 
@@ -100,12 +100,28 @@ def _literal_substring_pattern(value):
 
 
 def get_accessible_documents(user_id, filename=None, owner_name=None,
-                             category=None, start_date=None, end_date=None):
+                             category=None, start_date=None, end_date=None,
+                             limit=20, cursor_created_at=None,
+                             cursor_document_id=None):
     """Return searchable metadata the current user may view.
 
     The requester role is read from the database in this query. Admins receive
     listing/view visibility only; other actions still use authorize_document.
     """
+    if type(limit) is not int or limit < 1:
+        raise ValueError("Limit must be a positive integer.")
+
+    limit = min(limit, 50)
+    if (cursor_created_at is None) != (cursor_document_id is None):
+        raise ValueError("Both cursor values are required.")
+
+    if cursor_created_at is not None:
+        if not isinstance(cursor_created_at, datetime):
+            raise ValueError("Cursor timestamp is invalid.")
+        if cursor_created_at.tzinfo is not None:
+            raise ValueError("Cursor timestamp must be timezone-naive.")
+        if type(cursor_document_id) is not int or cursor_document_id < 1:
+            raise ValueError("Document cursor ID is invalid.")
     connection = get_db_connection()
 
     try:
@@ -135,6 +151,16 @@ def get_accessible_documents(user_id, filename=None, owner_name=None,
             if end_date is not None:
                 conditions.append("d.created_at < %s")
                 params.append(end_date)
+            if cursor_created_at is not None:
+                conditions.append(
+                    "(d.created_at < %s OR "
+                    "(d.created_at = %s AND d.id < %s))"
+                )
+                params.extend((
+                    cursor_created_at,
+                    cursor_created_at,
+                    cursor_document_id
+                ))
 
             sql = """
                 SELECT
@@ -163,7 +189,12 @@ def get_accessible_documents(user_id, filename=None, owner_name=None,
                 FROM documents AS d
                 INNER JOIN users AS owner ON owner.id = d.owner_id
                 INNER JOIN users AS requester ON requester.id = %s
-                WHERE """ + " AND ".join(conditions) + " ORDER BY d.created_at DESC"
+                WHERE """ + " AND ".join(conditions) + """
+                ORDER BY d.created_at DESC, d.id DESC
+                LIMIT %s
+            """
+            params.append(limit + 1)
+
             cursor.execute(sql, tuple(params))
             return cursor.fetchall()
 
