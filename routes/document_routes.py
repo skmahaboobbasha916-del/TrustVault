@@ -1,7 +1,11 @@
 import os
 
 from flask import Blueprint, jsonify, request, session, render_template, send_file
-from controllers.document_controller import delete_document, upload_document
+from controllers.document_controller import (
+    delete_document,
+    normalize_document_search_dates,
+    upload_document,
+)
 from models.document_model import get_accessible_documents
 from services.authorization_service import (
     AuthorizationError,
@@ -33,8 +37,30 @@ def list_documents():
         return "Authentication is required.", 401
 
     try:
-        documents = get_accessible_documents(session["user_id"])
+        filename = request.args.get("filename", "").strip() or None
+        owner_name = request.args.get("owner_name", "").strip() or None
+        category = request.args.get("category", "").strip() or None
+        start_value = request.args.get("start_date", "").strip() or None
+        end_value = request.args.get("end_date", "").strip() or None
+        start_date, end_date = normalize_document_search_dates(
+            start_value, end_value
+        )
+
+        if any((filename, owner_name, category, start_date, end_date)):
+            documents = get_accessible_documents(
+                session["user_id"],
+                filename=filename,
+                owner_name=owner_name,
+                category=category,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            # Preserve compatibility with the existing no-filter model call.
+            documents = get_accessible_documents(session["user_id"])
         return jsonify(documents), 200
+    except ValueError:
+        return "Invalid document search filters.", 400
     except Exception:
         return "Document listing failed.", 500
 

@@ -1,6 +1,7 @@
 import os
 import uuid
 import hashlib
+from datetime import date, timedelta
 
 from flask import current_app
 from werkzeug.utils import secure_filename
@@ -12,6 +13,33 @@ from services.authorization_service import authorize_document
 ALLOWED_EXTENSIONS = {
     "pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"
 }
+
+
+def normalize_document_search_dates(start_date=None, end_date=None):
+    """Validate ISO calendar dates and return an inclusive start/exclusive end."""
+    parsed_start = _parse_search_date(start_date) if start_date else None
+    parsed_end = _parse_search_date(end_date) if end_date else None
+
+    if parsed_start is not None and parsed_end is not None and parsed_start > parsed_end:
+        raise ValueError("Invalid date range.")
+
+    try:
+        exclusive_end = parsed_end + timedelta(days=1) if parsed_end is not None else None
+    except OverflowError as error:
+        raise ValueError("Invalid date range.") from error
+    return parsed_start, exclusive_end
+
+
+def _parse_search_date(value):
+    if not isinstance(value, str):
+        raise ValueError("Invalid date.")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("Invalid date.") from error
+    if parsed.isoformat() != value:
+        raise ValueError("Invalid date.")
+    return parsed
 
 
 def upload_document(file, owner_id, category=None):

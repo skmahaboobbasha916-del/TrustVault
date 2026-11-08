@@ -68,47 +68,78 @@ def get_documents_by_owner(owner_id):
         connection.close()
 
 
-def get_accessible_documents(user_id):
-    """Return document metadata for documents owned by or shared with a user."""
+def _literal_substring_pattern(value):
+    """Build a LIKE pattern that treats user supplied wildcard characters literally."""
+    escaped = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def get_accessible_documents(user_id, filename=None, owner_name=None,
+                             category=None, start_date=None, end_date=None):
+    """Return searchable metadata the current user may view.
+
+    The requester role is read from the database in this query. Admins receive
+    listing/view visibility only; other actions still use authorize_document.
+    """
     connection = get_db_connection()
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            conditions = [
+                "(d.owner_id = requester.id "
+                "OR LOWER(requester.role) = 'admin' "
+                "OR EXISTS ("
+                "SELECT 1 FROM document_permissions AS p "
+                "WHERE p.document_id = d.id AND p.user_id = requester.id "
+                "AND p.permission IN ('READ', 'EDIT') AND p.revoked_at IS NULL))"
+            ]
+            params = [user_id]
+
+            if filename:
+                conditions.append("LOWER(d.original_filename) LIKE %s ESCAPE '\\\\'")
+                params.append(_literal_substring_pattern(filename).lower())
+            if owner_name:
+                conditions.append("LOWER(owner.name) LIKE %s ESCAPE '\\\\'")
+                params.append(_literal_substring_pattern(owner_name).lower())
+            if category:
+                conditions.append("d.category = %s")
+                params.append(category)
+            if start_date is not None:
+                conditions.append("d.created_at >= %s")
+                params.append(start_date)
+            if end_date is not None:
+                conditions.append("d.created_at < %s")
+                params.append(end_date)
+
+            sql = """
                 SELECT
                     d.id AS document_id,
                     d.owner_id,
+                    owner.name AS owner_name,
                     d.original_filename,
                     d.category,
                     d.mime_type,
                     d.file_size,
                     d.created_at,
-                    'OWNER' AS access_level
+                    CASE
+                        WHEN d.owner_id = requester.id THEN 'OWNER'
+                        WHEN LOWER(requester.role) = 'admin' THEN 'ADMIN'
+                        ELSE (
+                            SELECT p.permission
+                            FROM document_permissions AS p
+                            WHERE p.document_id = d.id
+                              AND p.user_id = requester.id
+                              AND p.permission IN ('READ', 'EDIT')
+                              AND p.revoked_at IS NULL
+                            ORDER BY p.id DESC
+                            LIMIT 1
+                        )
+                    END AS access_level
                 FROM documents AS d
-                WHERE d.owner_id = %s
-
-                UNION ALL
-
-                SELECT
-                    d.id AS document_id,
-                    d.owner_id,
-                    d.original_filename,
-                    d.category,
-                    d.mime_type,
-                    d.file_size,
-                    d.created_at,
-                    p.permission AS access_level
-                FROM documents AS d
-                INNER JOIN document_permissions AS p
-                    ON p.document_id = d.id
-                WHERE p.user_id = %s
-                  AND p.revoked_at IS NULL
-                  AND d.owner_id <> %s
-                ORDER BY created_at DESC
-                """,
-                (user_id, user_id, user_id),
-            )
+                INNER JOIN users AS owner ON owner.id = d.owner_id
+                INNER JOIN users AS requester ON requester.id = %s
+                WHERE """ + " AND ".join(conditions) + " ORDER BY d.created_at DESC"
+            cursor.execute(sql, tuple(params))
             return cursor.fetchall()
 
     finally:
