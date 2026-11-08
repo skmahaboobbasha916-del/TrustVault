@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TrustVault | Audit activity</title>
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/admin_audit.css') }}">
+</head>
+<body>
+    <main class="dashboard-shell">
+        <header class="page-header">
+            <p class="eyebrow">TrustVault administration</p>
+            <h1>Audit activity</h1>
+            <p>Review recorded events using the filters below.</p>
+            <p>Dates filter stored timestamp values. Ordering across UTC and
+                timezone-unknown records is not verified real-world chronology.</p>
+        </header>
+
+        <section class="filter-panel" aria-labelledby="filters-heading">
+            <h2 id="filters-heading">Filter events</h2>
+            <form method="get" action="{{ url_for('admin_dashboard.admin_audit_dashboard') }}">
+                <label for="event_type">Event type</label>
+                <input id="event_type" name="event_type" type="text"
+                       value="{{ filters.event_type }}">
+
+                <label for="action">Action</label>
+                <input id="action" name="action" type="text"
+                       value="{{ filters.action }}">
+
+                <label for="result">Result</label>
+                <input id="result" name="result" type="text"
+                       value="{{ filters.result }}">
+
+                <label for="actor_user_id">Actor ID</label>
+                <input id="actor_user_id" name="actor_user_id" type="number"
+                       min="1" step="1" value="{{ filters.actor_user_id }}">
+
+                <label for="start_date">Start date</label>
+                <input id="start_date" name="start_date" type="date"
+                       value="{{ filters.start_date }}">
+
+                <label for="end_date">End date</label>
+                <input id="end_date" name="end_date" type="date"
+                       value="{{ filters.end_date }}">
+
+                <label for="limit">Rows per page</label>
+                <select id="limit" name="limit">
+                    {% for size in (20, 50, 100) %}
+                    <option value="{{ size }}" {% if limit == size %}selected{% endif %}>
+                        {{ size }}
+                    </option>
+                    {% endfor %}
+                </select>
+
+                <button type="submit">Apply filters</button>
+                <a href="{{ url_for('admin_dashboard.admin_audit_dashboard') }}">Clear filters</a>
+            </form>
+        </section>
+
+        <section class="results-panel" aria-labelledby="results-heading">
+            <div class="results-heading">
+                <h2 id="results-heading">Events</h2>
+                <p>{{ items|length }} records on this page</p>
+            </div>
+
+            <div class="table-scroll-region" role="region"
+                 aria-label="Scrollable audit events table" tabindex="0">
+                <table class="audit-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Time</th>
+                            <th scope="col">Event</th>
+                            <th scope="col">Action</th>
+                            <th scope="col">Result</th>
+                            <th scope="col">Actor</th>
+                            <th scope="col">Document</th>
+                            <th scope="col">Target user</th>
+                            <th scope="col">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>
+                                <time>{{ item.occurred_at }}</time>
+                                {% if item.occurred_at_origin == 'UTC' %}
+                                <span class="timestamp-origin timestamp-origin-utc">UTC</span>
+                                {% else %}
+                                <span class="timestamp-origin timestamp-origin-unknown">Timezone unknown</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.event_type }}</td>
+                            <td>{{ item.action }}</td>
+                            <td>
+                                {% if item.result == 'SUCCESS' %}
+                                <span class="status-indicator status-success">{{ item.result }}</span>
+                                {% elif item.result == 'DENIED' %}
+                                <span class="status-indicator status-denied">{{ item.result }}</span>
+                                {% elif item.result == 'FAILURE' %}
+                                <span class="status-indicator status-failure">{{ item.result }}</span>
+                                {% else %}
+                                <span class="status-indicator">{{ item.result }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.actor_user_id if item.actor_user_id is not none else '—' }}</td>
+                            <td>{{ item.document_id if item.document_id is not none else '—' }}</td>
+                            <td>{{ item.target_user_id if item.target_user_id is not none else '—' }}</td>
+                            <td>
+                                {% if item.details %}
+                                    {% for key, value in item.details.items() %}
+                                        <span>{{ key }}: {{ value }}</span>{% if not loop.last %}<br>{% endif %}
+                                    {% endfor %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8">No audit events match these filters.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <nav class="pagination" aria-label="Audit result pages">
+            {% if next_cursor %}
+            <a href="{{ url_for('admin_dashboard.admin_audit_dashboard',
+                event_type=filters.event_type, action=filters.action,
+                result=filters.result, actor_user_id=filters.actor_user_id or None,
+                start_date=filters.start_date, end_date=filters.end_date,
+                limit=limit, cursor=next_cursor) }}">Next page</a>
+            {% endif %}
+        </nav>
+    </main>
+</body>
+</html>

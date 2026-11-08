@@ -50,3 +50,13 @@ already present. Verify the resulting schema before deploying this application
 version, then resume writes after confirming all application connections use
 UTC. The origin default deliberately remains `UNKNOWN_LEGACY` for writers that
 omit the column.
+
+## One-time admin provisioning
+
+Public registration always creates a `viewer`. To provision the first admin,
+run `python -m scripts.provision_admin --email existing-user@example.com` from
+the project directory and type the exact confirmation phrase shown by the
+command. It promotes an existing user only when no admin currently exists and
+writes the role change and audit event in one transaction. This CLI is not a
+web route and must be run by a trusted operator with database access. It does
+not create users or accept a role value.

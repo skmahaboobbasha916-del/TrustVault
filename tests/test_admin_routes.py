@@ -366,6 +366,7 @@ def test_audit_api_rejects_cursor_bound_to_different_filters(client, monkeypatch
 @pytest.mark.parametrize(
     "query",
     [
+        "actor_user_id=",
         "actor_user_id=0",
         "actor_user_id=abc",
         "limit=0",

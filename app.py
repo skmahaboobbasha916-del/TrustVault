@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from flask import Flask, request
 
 from config.db import get_db_connection
-from routes.admin_routes import admin_bp
+from routes.admin_routes import admin_bp, admin_dashboard_bp
 from routes.auth_routes import auth_bp
 from routes.document_routes import document_bp
 
@@ -67,6 +67,7 @@ def create_app(config_override=None):
     application.register_blueprint(auth_bp, url_prefix="/api/auth")
     application.register_blueprint(document_bp, url_prefix="/api/documents")
     application.register_blueprint(admin_bp, url_prefix="/api/admin")
+    application.register_blueprint(admin_dashboard_bp)
 
     @application.route("/")
     def home():
