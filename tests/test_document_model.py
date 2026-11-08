@@ -30,11 +30,32 @@ def test_delete_document_record_orders_deletes_audit_and_commits(db_mocks):
     assert cursor.execute.call_args_list[1].args[1] == (10,)
     assert "INSERT INTO audit_events" in statements[2]
     audit_params = cursor.execute.call_args_list[2].args[1]
-    assert audit_params[:5] == (42, "DOCUMENT_DELETED", "DELETE", "SUCCESS", json.dumps({"document_id": 10}, separators=(",", ":")))
+    assert audit_params == (
+        42,
+        "DOCUMENT_DELETED",
+        "DELETE",
+        "SUCCESS",
+        json.dumps({"document_id": 10}, separators=(",", ":")),
+        "UTC",
+    )
     assert json.loads(audit_params[4]) == {"document_id": 10}
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
     connection.close.assert_called_once_with()
+
+
+def test_document_upload_audit_insert_marks_new_record_utc(db_mocks):
+    _, cursor = db_mocks
+    cursor.lastrowid = 17
+
+    assert document_model.create_document(
+        42, "report.pdf", "storage-id", "/internal/report.pdf", "finance",
+        "application/pdf", 123, "checksum",
+    ) == 17
+
+    sql, params = cursor.execute.call_args_list[1].args
+    assert "occurred_at_origin" in sql
+    assert params[-1] == "UTC"
 
 
 def test_permission_delete_failure_rolls_back_and_closes(db_mocks):

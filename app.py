@@ -1,34 +1,95 @@
-from routes.document_routes import document_bp
-from flask import Flask
-from config.db import get_db_connection
-from routes.auth_routes import auth_bp
 import os
 from dotenv import load_dotenv
+from flask import Flask, request
+
+from config.db import get_db_connection
+from routes.admin_routes import admin_bp
+from routes.auth_routes import auth_bp
+from routes.document_routes import document_bp
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = os.path.join(app.root_path, "uploads")
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-app.secret_key = os.getenv("FLASK_SECRET_KEY")
-
-app.register_blueprint(auth_bp, url_prefix="/api/auth")
-app.register_blueprint(document_bp, url_prefix="/api/documents")
-
-@app.route("/")
-def home():
-    return "TrustVault - Secure Document Sharing"
+_PRODUCTION_WEAK_SECRET_VALUES = {
+    "secret", "change-me", "changeme", "your-secret-key", "dev-secret",
+}
 
 
-@app.route("/test-db")
-def test_db():
-    try:
-        connection = get_db_connection()
-        connection.close()
-        return "TrustVault MySQL Connection Successful!"
-    except Exception:
-        return "Database connection failed.", 500
+def _has_repeated_secret_pattern(secret_bytes):
+    return secret_bytes in (secret_bytes + secret_bytes)[1:-1]
+
+
+def _validate_secret_key(secret_key, environment):
+    if isinstance(secret_key, str):
+        secret_bytes = secret_key.encode("utf-8")
+    elif isinstance(secret_key, bytes):
+        secret_bytes = secret_key
+    else:
+        raise RuntimeError("FLASK_SECRET_KEY must be configured.")
+
+    if not secret_bytes:
+        raise RuntimeError("FLASK_SECRET_KEY must be configured.")
+
+    if environment != "development":
+        normalized = secret_bytes.decode("utf-8", errors="ignore").strip().lower()
+        if (len(secret_bytes) < 32 or len(secret_bytes) > 4096
+                or len(set(secret_bytes)) < 16
+                or _has_repeated_secret_pattern(secret_bytes)
+                or normalized in _PRODUCTION_WEAK_SECRET_VALUES):
+            raise RuntimeError("FLASK_SECRET_KEY is too weak for production.")
+
+
+def create_app(config_override=None):
+    """Create TrustVault with an explicitly configured signing key."""
+    configuration = dict(config_override or {})
+    environment = os.getenv("TRUSTVAULT_ENV", "production").strip().lower()
+    if environment not in {"production", "development", "test"}:
+        raise RuntimeError("TRUSTVAULT_ENV must be production, development, or test.")
+    if configuration.get("TESTING") is True:
+        environment = "test"
+
+    secret_key = configuration.get("SECRET_KEY", os.getenv("FLASK_SECRET_KEY"))
+    _validate_secret_key(secret_key, environment)
+
+    application = Flask(__name__)
+    application.config.update(
+        SECRET_KEY=secret_key,
+        UPLOAD_FOLDER=os.path.join(application.root_path, "uploads"),
+        MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+    )
+    application.config.update(configuration)
+
+    @application.after_request
+    def prevent_admin_api_caching(response):
+        if request.path == "/api/admin" or request.path.startswith("/api/admin/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    application.register_blueprint(auth_bp, url_prefix="/api/auth")
+    application.register_blueprint(document_bp, url_prefix="/api/documents")
+    application.register_blueprint(admin_bp, url_prefix="/api/admin")
+
+    @application.route("/")
+    def home():
+        return "TrustVault - Secure Document Sharing"
+
+    @application.route("/test-db")
+    def test_db():
+        try:
+            connection = get_db_connection()
+            connection.close()
+            return "TrustVault MySQL Connection Successful!"
+        except Exception:
+            return "Database connection failed.", 500
+
+    return application
+
+app = create_app()
+
+
+def run_server():
+    """Run the built-in server without enabling Flask's interactive debugger."""
+    app.run(debug=False)
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    run_server()

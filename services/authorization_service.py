@@ -31,8 +31,8 @@ def _audit(cursor, actor_user_id, document_id, target_user_id,
     cursor.execute(
         """INSERT INTO audit_events
            (actor_user_id, document_id, target_user_id, event_type,
-            action, result, details)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            action, result, details, occurred_at_origin)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             actor_user_id,
             document_id,
@@ -41,6 +41,7 @@ def _audit(cursor, actor_user_id, document_id, target_user_id,
             action,
             result,
             json.dumps(details, separators=(",", ":")) if details is not None else None,
+            "UTC",
         ),
     )
 

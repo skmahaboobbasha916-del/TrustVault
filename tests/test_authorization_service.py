@@ -34,7 +34,8 @@ def audit_records(cursor):
 def assert_access_audit(cursor, action, result, reason=None):
     records = audit_records(cursor)
     assert len(records) == 1
-    actor_id, document_id, target_id, event_type, audited_action, audited_result, details = records[0]
+    (actor_id, document_id, target_id, event_type, audited_action,
+     audited_result, details, origin) = records[0]
     assert actor_id == 2
     assert document_id == 10
     assert target_id is None
@@ -42,6 +43,7 @@ def assert_access_audit(cursor, action, result, reason=None):
     assert audited_action == action.upper()
     assert audited_result == result
     assert (json.loads(details) if details else None) == ({"reason": reason} if reason else None)
+    assert origin == "UTC"
 
 
 @pytest.mark.parametrize("action", ["view", "download", "modify", "delete", "grant", "revoke"])
@@ -174,12 +176,13 @@ def test_owner_cannot_grant_permission_to_self(database):
 
     records = audit_records(cursor)
     assert len(records) == 1
-    actor_id, document_id, target_id, event_type, action, result, details = records[0]
+    actor_id, document_id, target_id, event_type, action, result, details, origin = records[0]
     assert (actor_id, document_id, target_id) == (owner["id"], owned_document["id"], owner["id"])
     assert event_type == "PERMISSION_GRANT_ATTEMPT"
     assert action == "GRANT"
     assert result == "DENIED"
     assert json.loads(details) == {"reason": "owner_cannot_grant_permission_to_self"}
+    assert origin == "UTC"
     connection.commit.assert_called_once()
 
 

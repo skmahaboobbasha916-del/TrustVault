@@ -53,9 +53,9 @@ def create_document(owner_id, original_filename, stored_filename,
                 """
                 INSERT INTO audit_events (
                     actor_user_id, document_id, target_user_id,
-                    event_type, action, result, details
+                    event_type, action, result, details, occurred_at_origin
                 )
-                VALUES (%s, %s, NULL, %s, %s, %s, NULL)
+                VALUES (%s, %s, NULL, %s, %s, %s, NULL, %s)
                 """,
                 (
                     owner_id,
@@ -63,6 +63,7 @@ def create_document(owner_id, original_filename, stored_filename,
                     "DOCUMENT_UPLOADED",
                     "UPLOAD",
                     "SUCCESS",
+                    "UTC",
                 ),
             )
 
@@ -193,9 +194,9 @@ def delete_document_record(document_id, actor_user_id):
                 """
                 INSERT INTO audit_events (
                     actor_user_id, document_id, target_user_id,
-                    event_type, action, result, details
+                    event_type, action, result, details, occurred_at_origin
                 )
-                VALUES (%s, NULL, NULL, %s, %s, %s, %s)
+                VALUES (%s, NULL, NULL, %s, %s, %s, %s, %s)
                 """,
                 (
                     actor_user_id,
@@ -203,6 +204,7 @@ def delete_document_record(document_id, actor_user_id):
                     "DELETE",
                     "SUCCESS",
                     json.dumps({"document_id": document_id}, separators=(",", ":")),
+                    "UTC",
                 ),
             )
 
