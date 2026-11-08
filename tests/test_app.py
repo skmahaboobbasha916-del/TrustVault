@@ -8,6 +8,7 @@ import pytest
 def client(monkeypatch):
     monkeypatch.setitem(trustvault_app.app.config, "TESTING", True)
     monkeypatch.setitem(trustvault_app.app.config, "SECRET_KEY", "test-secret")
+    monkeypatch.setitem(trustvault_app.app.config, "WTF_CSRF_ENABLED", False)
     return trustvault_app.app.test_client()
 
 

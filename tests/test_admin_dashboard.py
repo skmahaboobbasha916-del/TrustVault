@@ -14,6 +14,7 @@ from routes import admin_routes
 def client(monkeypatch):
     monkeypatch.setitem(trustvault_app.config, "TESTING", True)
     monkeypatch.setitem(trustvault_app.config, "SECRET_KEY", "test-secret")
+    monkeypatch.setitem(trustvault_app.config, "WTF_CSRF_ENABLED", False)
     return trustvault_app.test_client()
 
 

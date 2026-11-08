@@ -11,7 +11,7 @@ from services.authorization_service import AuthorizationError
 @pytest.fixture
 def client():
     app = Flask(__name__)
-    app.config.update(TESTING=True, SECRET_KEY="test-secret")
+    app.config.update(TESTING=True, SECRET_KEY="test-secret", WTF_CSRF_ENABLED=False)
     app.register_blueprint(document_routes.document_bp, url_prefix="/api/documents")
     return app.test_client()
 

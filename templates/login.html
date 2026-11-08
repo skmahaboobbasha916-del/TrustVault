@@ -8,6 +8,7 @@
         <h2>Login to TrustVault</h2>
 
         <form method="POST" action="/api/auth/login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="email" name="email"
                    placeholder="Email Address" required>
 

@@ -10,6 +10,7 @@
         <form method="POST"
               action="/api/documents/upload"
               enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <label>Select Document:</label>
             <input type="file" name="document" required>

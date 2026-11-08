@@ -1,11 +1,14 @@
 import os
 from dotenv import load_dotenv
 from flask import Flask, request
+from flask_wtf.csrf import CSRFProtect
 
 from config.db import get_db_connection
 from routes.admin_routes import admin_bp, admin_dashboard_bp
 from routes.auth_routes import auth_bp
 from routes.document_routes import document_bp
+
+csrf = CSRFProtect()
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -55,8 +58,10 @@ def create_app(config_override=None):
         SECRET_KEY=secret_key,
         UPLOAD_FOLDER=os.path.join(application.root_path, "uploads"),
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+        WTF_CSRF_ENABLED=True,
     )
     application.config.update(configuration)
+    csrf.init_app(application)
 
     @application.after_request
     def prevent_admin_api_caching(response):

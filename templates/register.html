@@ -10,6 +10,7 @@
         <h2>Create Your Account</h2>
 
         <form method="POST" action="/api/auth/register">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="name" placeholder="Full Name" required>
 
             <input type="email" name="email" placeholder="Email Address" required>
