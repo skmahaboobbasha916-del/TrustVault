@@ -182,6 +182,85 @@ def test_document_list_excludes_internal_storage_fields(client, monkeypatch):
     assert "stored_filename" not in body
 
 
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("filename=Q1", {"filename": "Q1"}),
+        ("owner_name=Ada", {"owner_name": "Ada"}),
+        ("category=reports", {"category": "reports"}),
+        ("start_date=2025-01-01", {"start_date": datetime(2025, 1, 1).date()}),
+        (
+            "filename=report&owner_name=Ada&category=reports&start_date=2025-01-01&end_date=2025-01-31",
+            {
+                "filename": "report",
+                "owner_name": "Ada",
+                "category": "reports",
+                "start_date": datetime(2025, 1, 1).date(),
+                "end_date": datetime(2025, 2, 1).date(),
+            },
+        ),
+    ],
+)
+def test_document_list_passes_search_filters(client, monkeypatch, query, expected):
+    authenticate(client, user_id=42)
+    get_documents = MagicMock(return_value=[])
+    monkeypatch.setattr(document_routes, "get_accessible_documents", get_documents)
+
+    response = client.get(f"/api/documents/?{query}")
+
+    assert response.status_code == 200
+    get_documents.assert_called_once_with(
+        42,
+        filename=expected.get("filename"),
+        owner_name=expected.get("owner_name"),
+        category=expected.get("category"),
+        start_date=expected.get("start_date"),
+        end_date=expected.get("end_date"),
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "start_date=2025-02-30",
+        "end_date=9999-12-31",
+        "end_date=not-a-date",
+        "start_date=2025-03-01&end_date=2025-02-28",
+        "start_date=2025-1-01",
+    ],
+)
+def test_document_list_rejects_invalid_date_filters(client, monkeypatch, query):
+    authenticate(client)
+    get_documents = MagicMock()
+    monkeypatch.setattr(document_routes, "get_accessible_documents", get_documents)
+
+    response = client.get(f"/api/documents/?{query}")
+
+    assert response.status_code == 400
+    assert response.get_data(as_text=True) == "Invalid document search filters."
+    get_documents.assert_not_called()
+
+
+def test_document_list_search_uses_session_identity_and_ignores_user_id_query(
+    client, monkeypatch
+):
+    authenticate(client, user_id=42)
+    get_documents = MagicMock(return_value=[])
+    monkeypatch.setattr(document_routes, "get_accessible_documents", get_documents)
+
+    response = client.get("/api/documents/?user_id=999&filename=report")
+
+    assert response.status_code == 200
+    get_documents.assert_called_once_with(
+        42,
+        filename="report",
+        owner_name=None,
+        category=None,
+        start_date=None,
+        end_date=None,
+    )
+
+
 def test_document_delete_requires_authentication(client, monkeypatch):
     delete = MagicMock()
     monkeypatch.setattr(document_routes, "delete_document", delete)

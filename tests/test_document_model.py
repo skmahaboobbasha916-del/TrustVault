@@ -104,3 +104,67 @@ def test_audit_is_not_inserted_when_document_delete_fails(db_mocks):
     assert all("INSERT INTO audit_events" not in item.args[0] for item in cursor.execute.call_args_list)
     connection.rollback.assert_called_once_with()
     connection.close.assert_called_once_with()
+
+
+def test_accessible_document_search_uses_visibility_exists_and_safe_columns(db_mocks):
+    _, cursor = db_mocks
+
+    document_model.get_accessible_documents(42)
+
+    sql, params = cursor.execute.call_args.args
+    normalized = " ".join(sql.split())
+    assert "INNER JOIN users AS requester ON requester.id = %s" in normalized
+    assert "LOWER(requester.role) = 'admin'" in normalized
+    assert "EXISTS (SELECT 1 FROM document_permissions" in normalized
+    assert "p.revoked_at IS NULL" in normalized
+    assert "p.permission IN ('READ', 'EDIT')" in normalized
+    assert "file_path" not in normalized
+    assert "stored_filename" not in normalized
+    assert "UNION" not in normalized
+    assert params == (42,)
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected_params", "expected_sql"),
+    [
+        ({"filename": "Quarterly"}, (7, "%quarterly%"), "LOWER(d.original_filename) LIKE %s"),
+        ({"owner_name": "Ada"}, (7, "%ada%"), "LOWER(owner.name) LIKE %s"),
+        ({"category": "finance"}, (7, "finance"), "d.category = %s"),
+        ({"start_date": "2025-01-01"}, (7, "2025-01-01"), "d.created_at >= %s"),
+        ({"end_date": "2025-02-01"}, (7, "2025-02-01"), "d.created_at < %s"),
+        (
+            {
+                "filename": "Q%_\\1",
+                "owner_name": "Ada%",
+                "category": "finance",
+                "start_date": "2025-01-01",
+                "end_date": "2025-02-01",
+            },
+            (7, "%q\\%\\_\\\\1%", "%ada\\%%", "finance", "2025-01-01", "2025-02-01"),
+            "d.created_at < %s",
+        ),
+    ],
+)
+def test_accessible_document_search_binds_filters_and_escapes_like(
+    db_mocks, filters, expected_params, expected_sql
+):
+    _, cursor = db_mocks
+
+    document_model.get_accessible_documents(7, **filters)
+
+    sql, params = cursor.execute.call_args.args
+    assert expected_sql in sql
+    assert params == expected_params
+    if "filename" in filters or "owner_name" in filters:
+        assert "ESCAPE" in sql
+
+
+def test_accessible_document_search_has_no_permission_join_duplicates(db_mocks):
+    _, cursor = db_mocks
+
+    document_model.get_accessible_documents(7, filename="report")
+
+    sql = cursor.execute.call_args.args[0]
+    assert "EXISTS (" in sql
+    assert "INNER JOIN document_permissions" not in sql
+    assert "SELECT p.permission" in sql
