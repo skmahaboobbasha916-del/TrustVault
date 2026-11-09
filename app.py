@@ -133,7 +133,11 @@ def create_app(config_override=None):
             connection = get_db_connection()
             connection.close()
             return "TrustVault MySQL Connection Successful!"
+
         except Exception:
+            application.logger.exception(
+                "TrustVault database connection error"
+            )
             return "Database connection failed.", 500
 
     return application
