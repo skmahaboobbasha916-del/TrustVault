@@ -1,18 +1,29 @@
+
 import os
 from datetime import datetime
 from itsdangerous import URLSafeSerializer, BadSignature
-from flask import current_app
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    request,
+    session,
+    render_template,
+    send_file,
+)
 
-from flask import Blueprint, jsonify, request, session, render_template, send_file
 from controllers.document_controller import (
     delete_document,
     normalize_document_search_dates,
     upload_document,
 )
+
 from models.document_model import (
     get_accessible_documents,
     get_documents_by_owner,
 )
+
+from models.user_model import get_all_users
 
 from services.authorization_service import (
     AuthorizationError,
@@ -22,9 +33,9 @@ from services.authorization_service import (
     revoke_document_permission,
 )
 
-from models.user_model import get_all_users
 
 document_bp = Blueprint("documents", __name__)
+
 
 def _get_document_cursor_serializer():
     return URLSafeSerializer(
@@ -84,9 +95,14 @@ def delete_document_route(document_id):
 
     try:
         delete_document(session["user_id"], document_id)
-        return jsonify({"message": "Document deleted successfully."}), 200
+
+        return jsonify({
+            "message": "Document deleted successfully."
+        }), 200
+
     except (AuthorizationError, FileNotFoundError):
         return jsonify({"message": "Document not found."}), 404
+
     except Exception:
         return jsonify({"message": "Document deletion failed."}), 500
 
@@ -97,25 +113,39 @@ def modify_document_metadata_route(document_id):
         return jsonify({"message": "Authentication is required."}), 401
 
     payload = request.get_json(silent=True)
+
     if not isinstance(payload, dict) or not payload:
-        return jsonify({"message": "A non-empty JSON object is required."}), 400
+        return jsonify({
+            "message": "A non-empty JSON object is required."
+        }), 400
+
     if not set(payload).issubset({"category", "original_filename"}):
-        return jsonify({"message": "Unsupported document metadata field."}), 400
+        return jsonify({
+            "message": "Unsupported document metadata field."
+        }), 400
 
     try:
-        modify_document_metadata(session["user_id"], document_id, payload)
+        modify_document_metadata(
+            session["user_id"],
+            document_id,
+            payload,
+        )
+
         return jsonify({
             "message": "Document metadata updated successfully.",
             "document_id": document_id,
         }), 200
+
     except ValueError:
         return jsonify({"message": "Invalid document metadata."}), 400
+
     except AuthorizationError:
         return jsonify({"message": "Document not found."}), 404
+
     except Exception:
-        return jsonify({"message": "Document metadata update failed."}), 500
-
-
+        return jsonify({
+            "message": "Document metadata update failed."
+        }), 500
 
 
 @document_bp.route("/", methods=["GET"])
@@ -127,11 +157,13 @@ def list_documents():
         filename = request.args.get("filename", "").strip() or None
         owner_name = request.args.get("owner_name", "").strip() or None
         category = request.args.get("category", "").strip() or None
+
         start_value = request.args.get("start_date", "").strip() or None
         end_value = request.args.get("end_date", "").strip() or None
 
         start_date, end_date = normalize_document_search_dates(
-            start_value, end_value
+            start_value,
+            end_value,
         )
 
         if any((filename, owner_name, category, start_date, end_date)):
@@ -153,6 +185,8 @@ def list_documents():
 
     except Exception:
         return "Document listing failed.", 500
+
+
 @document_bp.route("/paginated", methods=["GET"])
 def list_documents_paginated():
     if "user_id" not in session:
@@ -167,11 +201,11 @@ def list_documents_paginated():
         end_value = request.args.get("end_date", "").strip() or None
 
         start_date, end_date = normalize_document_search_dates(
-            start_value, end_value
+            start_value,
+            end_value,
         )
 
-        limit_value = request.args.get("limit", "20")
-        limit = int(limit_value)
+        limit = int(request.args.get("limit", "20"))
 
         if limit < 1:
             raise ValueError("Invalid limit.")
@@ -220,19 +254,28 @@ def list_documents_paginated():
 
     except Exception:
         return "Document listing failed.", 500
+
+
 @document_bp.route("/<int:document_id>/download", methods=["GET"])
 def download_document(document_id):
     if "user_id" not in session:
         return "Authentication is required.", 401
 
     try:
-        document = authorize_document(session["user_id"], document_id, "download")
+        document = authorize_document(
+            session["user_id"],
+            document_id,
+            "download",
+        )
+
     except AuthorizationError:
         return "Document not found.", 404
+
     except Exception:
         return "Document download failed.", 500
 
     file_path = document.get("file_path")
+
     if not file_path or not os.path.isfile(file_path):
         return "Document file not found.", 404
 
@@ -242,8 +285,10 @@ def download_document(document_id):
             as_attachment=True,
             download_name=document.get("original_filename"),
         )
+
     except OSError:
         return "Document file not found.", 404
+
     except Exception:
         return "Document download failed.", 500
 
@@ -254,42 +299,91 @@ def grant_permission(document_id):
         return "Authentication is required.", 401
 
     payload = request.get_json(silent=True)
+
     if not isinstance(payload, dict):
         return "A JSON request body is required.", 400
 
     target_user_id = payload.get("target_user_id")
     permission = payload.get("permission")
+
     if type(target_user_id) is not int or target_user_id <= 0:
         return "A valid target_user_id is required.", 400
+
     if not isinstance(permission, str):
         return "Invalid permission.", 400
+
     permission = permission.strip().upper()
+
     if permission not in {"READ", "EDIT"}:
         return "Invalid permission.", 400
 
     try:
         permission_id = grant_document_permission(
-            session["user_id"], document_id, target_user_id, permission
+            session["user_id"],
+            document_id,
+            target_user_id,
+            permission,
         )
+
         return {"permission_id": permission_id}, 201
+
     except ValueError:
         return "Invalid permission.", 400
+
     except AuthorizationError:
         return "Document not found.", 404
+
     except Exception:
         return "Permission grant failed.", 500
 
 
-@document_bp.route("/<int:document_id>/permissions/<int:target_user_id>", methods=["DELETE"])
+@document_bp.route(
+    "/<int:document_id>/permissions/<int:target_user_id>",
+    methods=["DELETE"],
+)
 def revoke_permission(document_id, target_user_id):
     if "user_id" not in session:
         return "Authentication is required.", 401
 
     try:
-        revoke_document_permission(session["user_id"], document_id, target_user_id)
+        revoke_document_permission(
+            session["user_id"],
+            document_id,
+            target_user_id,
+        )
+
         return {"message": "Permission revoked."}, 200
+
     except AuthorizationError:
         return "Document not found.", 404
+
+    except Exception:
+        return "Permission revocation failed.", 500
+
+
+@document_bp.route("/revoke-page", methods=["POST"])
+def revoke_document_page():
+    if "user_id" not in session:
+        return "Please log in first.", 401
+
+    document_id = request.form.get("document_id", type=int)
+    target_user_id = request.form.get("target_user_id", type=int)
+
+    if not document_id or not target_user_id:
+        return "Please select a document and user.", 400
+
+    try:
+        revoke_document_permission(
+            session["user_id"],
+            document_id,
+            target_user_id,
+        )
+
+        return "Permission revoked successfully.", 200
+
+    except AuthorizationError:
+        return "Document not found or active permission not found.", 403
+
     except Exception:
         return "Permission revocation failed.", 500
 
@@ -300,6 +394,7 @@ def upload_page():
         return "Please log in first.", 401
 
     return render_template("upload.html")
+
 
 @document_bp.route("/upload", methods=["POST"])
 def upload():
@@ -313,16 +408,20 @@ def upload():
         document_id = upload_document(
             file,
             session["user_id"],
-            category
+            category,
         )
 
-        return f"Document uploaded successfully. ID: {document_id}", 201
+        return (
+            f"Document uploaded successfully. ID: {document_id}",
+            201,
+        )
 
     except ValueError as error:
         return str(error), 400
 
     except Exception:
         return "Document upload failed.", 500
+
 
 @document_bp.route("/share-page", methods=["GET", "POST"])
 def share_document_page():
@@ -369,15 +468,25 @@ def share_document_page():
             if user["id"] != user_id
         ]
 
-        return render_template(
+        response = render_template(
             "share_document.html",
             documents=documents,
             users=users,
         )
 
+        print(
+            "REVOKE FORM PRESENT:",
+            "Revoke Access" in response,
+        )
+
+        return response
+
     except ValueError:
         return "Invalid permission or selection.", 400
+
     except AuthorizationError:
         return "Permission could not be granted.", 403
+
     except Exception:
+        current_app.logger.exception("Document sharing page failed.")
         return "Document sharing page failed.", 500

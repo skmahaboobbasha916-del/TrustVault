@@ -9,6 +9,8 @@
 <body>
     <h1>Share a Document</h1>
 
+    <h2>Grant Access</h2>
+
     <form method="POST" action="{{ url_for('documents.share_document_page') }}">
 
         <input type="hidden" name="csrf_token"
@@ -46,6 +48,42 @@
         <br><br>
 
         <button type="submit">Grant Access</button>
+    </form>
+
+    <hr>
+
+    <h2>Revoke Access</h2>
+
+    <form method="POST"
+          action="{{ url_for('documents.revoke_document_page') }}">
+
+        <input type="hidden" name="csrf_token"
+               value="{{ csrf_token() }}">
+
+        <label for="revoke_document_id">Select Document:</label>
+        <select name="document_id" id="revoke_document_id" required>
+            {% for document in documents %}
+                <option value="{{ document.document_id }}">
+                    {{ document.original_filename }}
+                    (ID: {{ document.document_id }})
+                </option>
+            {% endfor %}
+        </select>
+
+        <br><br>
+
+        <label for="revoke_user_id">Select User:</label>
+        <select name="target_user_id" id="revoke_user_id" required>
+            {% for other_user in users %}
+                <option value="{{ other_user.id }}">
+                    {{ other_user.name }} ({{ other_user.email }})
+                </option>
+            {% endfor %}
+        </select>
+
+        <br><br>
+
+        <button type="submit">Revoke Access</button>
     </form>
 
     <br>

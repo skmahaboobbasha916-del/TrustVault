@@ -55,6 +55,10 @@ def create_app(config_override=None):
     _validate_secret_key(secret_key, environment)
 
     application = Flask(__name__)
+
+    print("TEMPLATE FOLDER:", application.template_folder)
+    print("TEMPLATE PATH:", application.jinja_loader.searchpath)
+
     application.config.update(
         SECRET_KEY=secret_key,
         UPLOAD_FOLDER=os.path.join(application.root_path, "uploads"),
