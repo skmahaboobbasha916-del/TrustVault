@@ -1,7 +1,7 @@
 
 import os
 from dotenv import load_dotenv
-from flask import Flask, request
+from flask import Flask, request, render_template_string
 from flask_wtf.csrf import CSRFProtect
 
 from config.db import get_db_connection
@@ -71,7 +71,6 @@ def create_app(config_override=None):
         "SECRET_KEY", os.getenv("FLASK_SECRET_KEY")
     )
 
-    # Temporary diagnostic: never print the actual secret key.
     secret_bytes = (
         secret_key.encode("utf-8")
         if isinstance(secret_key, str)
@@ -92,9 +91,6 @@ def create_app(config_override=None):
     _validate_secret_key(secret_key, environment)
 
     application = Flask(__name__)
-
-    print("TEMPLATE FOLDER:", application.template_folder)
-    print("TEMPLATE PATH:", application.jinja_loader.searchpath)
 
     application.config.update(
         SECRET_KEY=secret_key,
@@ -125,7 +121,161 @@ def create_app(config_override=None):
 
     @application.route("/")
     def home():
-        return "TrustVault - Secure Document Sharing"
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>TrustVault - Secure Document Sharing</title>
+            <style>
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+
+                body {
+                    font-family: Arial, sans-serif;
+                    background: #f1f5f9;
+                    color: #172554;
+                    min-height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                header {
+                    background: #102a56;
+                    color: white;
+                    padding: 22px 8%;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                }
+
+                header h2 {
+                    font-size: 25px;
+                }
+
+                nav {
+                    display: flex;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+
+                nav a, .main-button {
+                    text-decoration: none;
+                    padding: 12px 22px;
+                    border-radius: 7px;
+                    font-weight: bold;
+                    display: inline-block;
+                }
+
+                nav a {
+                    color: white;
+                    border: 1px solid white;
+                }
+
+                nav a:hover {
+                    background: white;
+                    color: #102a56;
+                }
+
+                main {
+                    flex: 1;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                    padding: 60px 20px;
+                }
+
+                .hero {
+                    max-width: 750px;
+                }
+
+                .hero h1 {
+                    font-size: 44px;
+                    margin-bottom: 20px;
+                    color: #102a56;
+                }
+
+                .hero p {
+                    font-size: 18px;
+                    line-height: 1.7;
+                    color: #475569;
+                    margin-bottom: 30px;
+                }
+
+                .main-button {
+                    background: #2563eb;
+                    color: white;
+                    margin: 8px;
+                }
+
+                .main-button.secondary {
+                    background: white;
+                    color: #2563eb;
+                    border: 2px solid #2563eb;
+                }
+
+                .main-button:hover {
+                    opacity: 0.85;
+                }
+
+                footer {
+                    text-align: center;
+                    padding: 20px;
+                    background: #102a56;
+                    color: white;
+                }
+
+                @media (max-width: 600px) {
+                    header {
+                        justify-content: center;
+                        text-align: center;
+                    }
+
+                    .hero h1 {
+                        font-size: 32px;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <header>
+                <h2>TrustVault</h2>
+                <nav>
+                    <a href="/api/auth/login">Login</a>
+                    <a href="/api/auth/register">Register</a>
+                </nav>
+            </header>
+
+            <main>
+                <section class="hero">
+                    <h1>TrustVault</h1>
+                    <p>
+                        Secure Document Sharing with a Real Audit Trail.
+                        Protect your documents, manage access permissions,
+                        and maintain transparency with secure activity tracking.
+                    </p>
+
+                    <a class="main-button"
+                       href="/api/auth/register">Get Started</a>
+
+                    <a class="main-button secondary"
+                       href="/api/auth/login">Login</a>
+                </section>
+            </main>
+
+            <footer>
+                TrustVault - Secure Document Sharing
+            </footer>
+        </body>
+        </html>
+        """)
 
     @application.route("/test-db")
     def test_db():
