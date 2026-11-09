@@ -5,3 +5,5 @@ python-dotenv==1.2.4
 
 # Testing
 pytest==9.2.0
+
+gunicorn==23.0.0
