@@ -39,3 +39,15 @@ def get_user_by_email(email):
             return cursor.fetchone()
     finally:
         connection.close()
+def get_all_users():
+    connection = get_db_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, name, email, role FROM users ORDER BY name"
+            )
+            return cursor.fetchall()
+
+    finally:
+        connection.close()

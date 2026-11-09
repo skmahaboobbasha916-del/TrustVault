@@ -7,6 +7,7 @@ from config.db import get_db_connection
 from routes.admin_routes import admin_bp, admin_dashboard_bp
 from routes.auth_routes import auth_bp
 from routes.document_routes import document_bp
+from routes.dashboard_routes import dashboard_bp
 
 csrf = CSRFProtect()
 
@@ -71,6 +72,7 @@ def create_app(config_override=None):
 
     application.register_blueprint(auth_bp, url_prefix="/api/auth")
     application.register_blueprint(document_bp, url_prefix="/api/documents")
+    application.register_blueprint(dashboard_bp)
     application.register_blueprint(admin_bp, url_prefix="/api/admin")
     application.register_blueprint(admin_dashboard_bp)
 

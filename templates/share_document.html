@@ -1,0 +1,57 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrustVault - Share Document</title>
+</head>
+<body>
+    <h1>Share a Document</h1>
+
+    <form method="POST" action="{{ url_for('documents.share_document_page') }}">
+
+        <input type="hidden" name="csrf_token"
+               value="{{ csrf_token() }}">
+
+        <label for="document_id">Select Document:</label>
+        <select name="document_id" id="document_id" required>
+            {% for document in documents %}
+                <option value="{{ document.document_id }}">
+                    {{ document.original_filename }}
+                    (ID: {{ document.document_id }})
+                </option>
+            {% endfor %}
+        </select>
+
+        <br><br>
+
+        <label for="target_user_id">Select User:</label>
+        <select name="target_user_id" id="target_user_id" required>
+            {% for other_user in users %}
+                <option value="{{ other_user.id }}">
+                    {{ other_user.name }} ({{ other_user.email }})
+                </option>
+            {% endfor %}
+        </select>
+
+        <br><br>
+
+        <label for="permission">Permission:</label>
+        <select name="permission" id="permission" required>
+            <option value="READ">READ</option>
+            <option value="EDIT">EDIT</option>
+        </select>
+
+        <br><br>
+
+        <button type="submit">Grant Access</button>
+    </form>
+
+    <br>
+
+    <a href="{{ url_for('dashboard.user_dashboard') }}">
+        Back to Dashboard
+    </a>
+</body>
+</html>

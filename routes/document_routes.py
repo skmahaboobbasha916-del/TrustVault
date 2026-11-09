@@ -9,7 +9,11 @@ from controllers.document_controller import (
     normalize_document_search_dates,
     upload_document,
 )
-from models.document_model import get_accessible_documents
+from models.document_model import (
+    get_accessible_documents,
+    get_documents_by_owner,
+)
+
 from services.authorization_service import (
     AuthorizationError,
     authorize_document,
@@ -17,6 +21,8 @@ from services.authorization_service import (
     modify_document_metadata,
     revoke_document_permission,
 )
+
+from models.user_model import get_all_users
 
 document_bp = Blueprint("documents", __name__)
 
@@ -317,3 +323,61 @@ def upload():
 
     except Exception:
         return "Document upload failed.", 500
+
+@document_bp.route("/share-page", methods=["GET", "POST"])
+def share_document_page():
+    if "user_id" not in session:
+        return "Please log in first.", 401
+
+    user_id = session["user_id"]
+
+    try:
+        documents = get_documents_by_owner(user_id)
+        users = get_all_users()
+
+        if request.method == "POST":
+            document_id = request.form.get("document_id", type=int)
+            target_user_id = request.form.get("target_user_id", type=int)
+            permission = request.form.get("permission", "").strip().upper()
+
+            if not document_id or not target_user_id:
+                return "Please select a document and user.", 400
+
+            permission_id = grant_document_permission(
+                user_id,
+                document_id,
+                target_user_id,
+                permission,
+            )
+
+            return (
+                f"Permission granted successfully. "
+                f"Permission ID: {permission_id}",
+                201,
+            )
+
+        documents = [
+            {
+                **document,
+                "document_id": document["id"],
+            }
+            for document in documents
+        ]
+
+        users = [
+            user for user in users
+            if user["id"] != user_id
+        ]
+
+        return render_template(
+            "share_document.html",
+            documents=documents,
+            users=users,
+        )
+
+    except ValueError:
+        return "Invalid permission or selection.", 400
+    except AuthorizationError:
+        return "Permission could not be granted.", 403
+    except Exception:
+        return "Document sharing page failed.", 500

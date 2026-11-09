@@ -1,0 +1,149 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrustVault - Dashboard</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+            background: #f4f6f9;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+        }
+
+        input, button {
+            padding: 9px;
+            margin: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background: #e9eef5;
+        }
+
+        a {
+            color: #1557a0;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <h1>TrustVault Dashboard</h1>
+
+    <p>Welcome, {{ user.get("name", "User") }}!</p>
+
+    <a href="/api/documents/upload-page">Upload Document</a>
+
+    <a href="{{ url_for('documents.share_document_page') }}">Share Document</a>
+
+    <form method="POST" action="/api/auth/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Logout</button>
+    </form>
+
+    <hr>
+
+    <h2>My Accessible Documents</h2>
+
+    <form method="GET" action="{{ url_for('dashboard.user_dashboard') }}">
+        <input type="text" name="filename"
+               placeholder="Search filename"
+               value="{{ filters.filename }}">
+
+        <input type="text" name="owner_name"
+               placeholder="Owner name"
+               value="{{ filters.owner_name }}">
+
+        <input type="text" name="category"
+               placeholder="Category"
+               value="{{ filters.category }}">
+
+        <input type="date" name="start_date"
+               value="{{ filters.start_date }}">
+
+        <input type="date" name="end_date"
+               value="{{ filters.end_date }}">
+
+        <button type="submit">Search</button>
+        <a href="{{ url_for('dashboard.user_dashboard') }}">Clear</a>
+    </form>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Document ID</th>
+                <th>Filename</th>
+                <th>Category</th>
+                <th>Owner</th>
+                <th>Access Level</th>
+                <th>Created At</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        {% for document in documents %}
+            <tr>
+                <td>{{ document.get("document_id", "") }}</td>
+                <td>{{ document.get("original_filename", "") }}</td>
+                <td>{{ document.get("category", "") }}</td>
+                <td>{{ document.get("owner_name", "") }}</td>
+                <td>{{ document.get("access_level", "") }}</td>
+                <td>{{ document.get("created_at", "") }}</td>
+                <td>
+                    <a href="/api/documents/{{ document.get('document_id') }}/download">
+                        Download
+                    </a>
+                </td>
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="7">No accessible documents found.</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if next_cursor %}
+        <p>
+            <a href="{{ url_for(
+                'dashboard.user_dashboard',
+                filename=filters.filename,
+                owner_name=filters.owner_name,
+                category=filters.category,
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                limit=filters.limit,
+                cursor=next_cursor
+            ) }}">
+                Next Page →
+            </a>
+        </p>
+    {% endif %}
+
+</div>
+</body>
+</html>
