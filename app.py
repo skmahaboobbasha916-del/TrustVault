@@ -1,3 +1,4 @@
+
 import os
 from dotenv import load_dotenv
 from flask import Flask, request
@@ -34,24 +35,60 @@ def _validate_secret_key(secret_key, environment):
         raise RuntimeError("FLASK_SECRET_KEY must be configured.")
 
     if environment != "development":
-        normalized = secret_bytes.decode("utf-8", errors="ignore").strip().lower()
-        if (len(secret_bytes) < 32 or len(secret_bytes) > 4096
-                or len(set(secret_bytes)) < 16
-                or _has_repeated_secret_pattern(secret_bytes)
-                or normalized in _PRODUCTION_WEAK_SECRET_VALUES):
-            raise RuntimeError("FLASK_SECRET_KEY is too weak for production.")
+        normalized = secret_bytes.decode(
+            "utf-8", errors="ignore"
+        ).strip().lower()
+
+        if (
+            len(secret_bytes) < 32
+            or len(secret_bytes) > 4096
+            or len(set(secret_bytes)) < 16
+            or _has_repeated_secret_pattern(secret_bytes)
+            or normalized in _PRODUCTION_WEAK_SECRET_VALUES
+        ):
+            raise RuntimeError(
+                "FLASK_SECRET_KEY is too weak for production."
+            )
 
 
 def create_app(config_override=None):
     """Create TrustVault with an explicitly configured signing key."""
     configuration = dict(config_override or {})
-    environment = os.getenv("TRUSTVAULT_ENV", "production").strip().lower()
+
+    environment = os.getenv(
+        "TRUSTVAULT_ENV", "production"
+    ).strip().lower()
+
     if environment not in {"production", "development", "test"}:
-        raise RuntimeError("TRUSTVAULT_ENV must be production, development, or test.")
+        raise RuntimeError(
+            "TRUSTVAULT_ENV must be production, development, or test."
+        )
+
     if configuration.get("TESTING") is True:
         environment = "test"
 
-    secret_key = configuration.get("SECRET_KEY", os.getenv("FLASK_SECRET_KEY"))
+    secret_key = configuration.get(
+        "SECRET_KEY", os.getenv("FLASK_SECRET_KEY")
+    )
+
+    # Temporary diagnostic: never print the actual secret key.
+    secret_bytes = (
+        secret_key.encode("utf-8")
+        if isinstance(secret_key, str)
+        else secret_key if isinstance(secret_key, bytes)
+        else b""
+    )
+
+    print("SECRET DIAGNOSTIC:", {
+        "present": bool(secret_bytes),
+        "length": len(secret_bytes),
+        "unique_chars": len(set(secret_bytes)),
+        "repeated_pattern": (
+            _has_repeated_secret_pattern(secret_bytes)
+            if secret_bytes else None
+        ),
+    })
+
     _validate_secret_key(secret_key, environment)
 
     application = Flask(__name__)
@@ -65,17 +102,23 @@ def create_app(config_override=None):
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,
         WTF_CSRF_ENABLED=True,
     )
+
     application.config.update(configuration)
     csrf.init_app(application)
 
     @application.after_request
     def prevent_admin_api_caching(response):
-        if request.path == "/api/admin" or request.path.startswith("/api/admin/"):
+        if (
+            request.path == "/api/admin"
+            or request.path.startswith("/api/admin/")
+        ):
             response.headers["Cache-Control"] = "no-store"
         return response
 
     application.register_blueprint(auth_bp, url_prefix="/api/auth")
-    application.register_blueprint(document_bp, url_prefix="/api/documents")
+    application.register_blueprint(
+        document_bp, url_prefix="/api/documents"
+    )
     application.register_blueprint(dashboard_bp)
     application.register_blueprint(admin_bp, url_prefix="/api/admin")
     application.register_blueprint(admin_dashboard_bp)
@@ -94,6 +137,7 @@ def create_app(config_override=None):
             return "Database connection failed.", 500
 
     return application
+
 
 app = create_app()
 
