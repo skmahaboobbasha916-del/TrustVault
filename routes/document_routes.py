@@ -10,6 +10,8 @@ from flask import (
     session,
     render_template,
     send_file,
+    redirect,
+    url_for,
 )
 
 from controllers.document_controller import (
@@ -490,3 +492,48 @@ def share_document_page():
     except Exception:
         current_app.logger.exception("Document sharing page failed.")
         return "Document sharing page failed.", 500
+
+@document_bp.route("/<int:document_id>/edit", methods=["GET", "POST"])
+def edit_document_page(document_id):
+    if "user_id" not in session:
+        return "Please log in first.", 401
+
+    user_id = session["user_id"]
+
+    try:
+        if request.method == "POST":
+            original_filename = request.form.get(
+                "original_filename", ""
+            ).strip()
+
+            category = request.form.get("category", "").strip()
+
+            fields = {
+                "original_filename": original_filename,
+                "category": category or None,
+            }
+
+            modify_document_metadata(user_id, document_id, fields)
+
+            return redirect(url_for("dashboard.user_dashboard"))
+
+        document = authorize_document(
+            user_id,
+            document_id,
+            "modify",
+        )
+
+        return render_template(
+            "edit_document.html",
+            document=document,
+        )
+
+    except ValueError:
+        return "Invalid document metadata.", 400
+
+    except AuthorizationError:
+        return "You are not authorized to edit this document.", 403
+
+    except Exception:
+        current_app.logger.exception("Document edit failed.")
+        return "Document edit failed.", 500

@@ -45,6 +45,12 @@
         a {
             color: #1557a0;
         }
+
+        .action-links {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
     </style>
 </head>
 
@@ -113,10 +119,24 @@
                 <td>{{ document.get("owner_name", "") }}</td>
                 <td>{{ document.get("access_level", "") }}</td>
                 <td>{{ document.get("created_at", "") }}</td>
+
                 <td>
-                    <a href="/api/documents/{{ document.get('document_id') }}/download">
-                        Download
-                    </a>
+                    <div class="action-links">
+
+                        <a href="/api/documents/{{ document.get('document_id') }}/download">
+                            Download
+                        </a>
+
+                        {% if document.get("access_level", "") in ["OWNER", "EDIT"] %}
+                            <a href="{{ url_for(
+                                'documents.edit_document_page',
+                                document_id=document.get('document_id')
+                            ) }}">
+                                Edit
+                            </a>
+                        {% endif %}
+
+                    </div>
                 </td>
             </tr>
         {% else %}
